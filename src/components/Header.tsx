@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { LayoutDashboard, Package } from "lucide-react";
+import { LayoutDashboard, Package, FileText } from "lucide-react";
 
 export function Header() {
   return (
-    <header className="border-b border-border bg-card py-4 px-6">
+    <header className="border-b border-border bg-card py-4 px-6 no-print">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <Link 
           href="/" 
@@ -28,6 +28,13 @@ export function Header() {
           >
             <Package className="h-4 w-4" />
             <span>Produtos</span>
+          </Link>
+          <Link
+            href="/fechamentos"
+            className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted hover:text-foreground transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            <span>Fechamentos</span>
           </Link>
         </nav>
       </div>

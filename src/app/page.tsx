@@ -1,6 +1,7 @@
 import { Header } from "@/components/Header";
 import { prisma } from "@/lib/prisma";
 import { DashboardClient } from "./DashboardClient";
+import { getTodayClosing, getCashTransactionsForToday } from "@/actions/closing";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export default async function DashboardPage() {
     orderBy: { name: "asc" },
   });
 
-  // Fetch orders: all OPEN orders, but only CLOSED orders created today (from midnight onwards)
+  // Fetch orders: all OPEN orders, plus CLOSED and CANCELLED orders created today
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -20,6 +21,12 @@ export default async function DashboardPage() {
         { status: "OPEN" },
         {
           status: "CLOSED",
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+        {
+          status: "CANCELLED",
           createdAt: {
             gte: todayStart,
           },
@@ -38,11 +45,20 @@ export default async function DashboardPage() {
     },
   });
 
+  // Fetch today's closing and cash transactions
+  const closing = await getTodayClosing();
+  const transactions = await getCashTransactionsForToday();
+
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground font-sans">
       <Header />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
-        <DashboardClient initialProducts={products} initialOrders={orders} />
+        <DashboardClient 
+          initialProducts={products} 
+          initialOrders={orders} 
+          initialClosing={closing as any}
+          initialTransactions={transactions}
+        />
       </main>
     </div>
   );
