@@ -20,7 +20,7 @@ model Product {
 model CustomerOrder {
   id            String      @id @default(uuid())
   clientName    String
-  status        String      @default("OPEN") // "OPEN", "CLOSED" ou "CANCELLED"
+  status        String      @default("OPEN") // "OPEN" ou "CLOSED"
   paymentMethod String?     // "PIX", "DINHEIRO", "DEBITO", "CREDITO"
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -42,53 +42,20 @@ model OrderLine {
   @@index([productId])
 }
 
-model CashTransaction {
-  id          String   @id @default(uuid())
-  type        String   // "SUPRIMENTO", "SANGRIA", "SAIDA"
-  amount      Float
-  description String
-  createdAt   DateTime @default(now())
-
-  @@map("transacoes_caixa")
-}
-
 model DailyClosing {
   id                 String    @id @default(uuid())
-  caixaId            String    @default("Principal") @map("caixa_id")
-  usuarioId          String    @default("Operador Padrão") @map("usuario_id")
   data               DateTime  @unique // Data do dia (sem hora)
-  abertura           DateTime  @default(now())
-  fechamento         DateTime?
-  saldoInicial       Float     @default(0) @map("saldo_inicial")
-  totalEntradas      Float     @default(0) @map("total_entradas")
-  totalSaidas        Float     @default(0) @map("total_saidas")
-  totalSangrias      Float     @default(0) @map("total_sangrias")
-  totalSuprimentos   Float     @default(0) @map("total_suprimentos")
-  totalCancelamentos Float     @default(0) @map("total_cancelamentos")
+  fechamento         DateTime  @default(now())
+  usuarioId          String    @default("Operador") @map("usuario_id")
+  totalComandas      Int       @default(0) @map("total_comandas")
+  totalVendido       Float     @default(0) @map("total_vendido")
+  totalPendente      Float     @default(0) @map("total_pendente")
   totalDinheiro      Float     @default(0) @map("total_dinheiro")
   totalPix           Float     @default(0) @map("total_pix")
   totalDebito        Float     @default(0) @map("total_debito")
   totalCredito       Float     @default(0) @map("total_credito")
-  totalVale          Float     @default(0) @map("total_vale")
   totalOutros        Float     @default(0) @map("total_outros")
-  saldoEsperado      Float     @default(0) @map("saldo_esperado")
-  saldoInformado     Float     @default(0) @map("saldo_informado")
-  diferenca          Float     @default(0)
-  observacoes        String?
-  status             String    @default("OPEN") // "OPEN", "CLOSED", "REOPENED"
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  unpaidClientsJson  String    @default("[]") @map("clientes_pendentes_json")
 
-  @@map("fechamentos_caixa")
-}
-
-model AuditLog {
-  id        String   @id @default(uuid())
-  usuarioId String   @default("Operador Padrão") @map("usuario_id")
-  acao      String   @map("acao") // "ABERTURA", "FECHAMENTO", "REABERTURA", "IMPRESSAO", "ALTERACAO"
-  dataHora  DateTime @default(now()) @map("data_hora")
-  ip        String?
-  detalhes  String?
-
-  @@map("logs_auditoria")
+  @@map("fechamentos_dia")
 }

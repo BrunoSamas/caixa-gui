@@ -16,10 +16,8 @@ import {
   Receipt,
   Search,
   Lock,
-  Unlock,
-  AlertCircle,
-  Printer,
-  FileText
+  FileText,
+  Printer
 } from "lucide-react";
 import { 
   createOrder, 
@@ -27,15 +25,10 @@ import {
   closeOrder, 
   deleteOrder,
   updateOrderLineQuantity,
-  deleteOrderLine,
-  cancelOrder
+  deleteOrderLine
 } from "@/actions/orders";
 import { 
-  openCaixa, 
-  createCashTransaction, 
-  closeCaixa, 
-  reopenCaixa,
-  logReportAction
+  closeDia 
 } from "@/actions/closing";
 
 interface Product {
@@ -62,73 +55,45 @@ interface CustomerOrder {
   items: OrderLine[];
 }
 
-interface CashTransaction {
-  id: string;
-  type: string;
-  amount: number;
-  description: string;
-  createdAt: Date | string;
-}
-
 interface DailyClosing {
   id: string;
-  caixaId: string;
-  usuarioId: string;
   data: Date | string;
-  abertura: Date | string;
-  fechamento?: Date | string | null;
-  saldoInicial: number;
-  totalEntradas: number;
-  totalSaidas: number;
-  totalSangrias: number;
-  totalSuprimentos: number;
-  totalCancelamentos: number;
+  fechamento: Date | string;
+  usuarioId: string;
+  totalComandas: number;
+  totalVendido: number;
+  totalPendente: number;
   totalDinheiro: number;
   totalPix: number;
   totalDebito: number;
   totalCredito: number;
-  totalVale: number;
   totalOutros: number;
-  saldoEsperado: number;
-  saldoInformado: number;
-  diferenca: number;
-  observacoes?: string | null;
-  status: string;
+  unpaidClientsJson: string;
 }
 
 interface DashboardClientProps {
   initialProducts: Product[];
   initialOrders: any[];
   initialClosing: DailyClosing | null;
-  initialTransactions: CashTransaction[];
 }
 
 export function DashboardClient({ 
   initialProducts, 
   initialOrders, 
-  initialClosing, 
-  initialTransactions 
+  initialClosing 
 }: DashboardClientProps) {
   const router = useRouter();
   
-  // States
+  // Local states
   const [orders, setOrders] = useState<CustomerOrder[]>(initialOrders);
   const [products] = useState<Product[]>(initialProducts);
   const [closing, setClosing] = useState<DailyClosing | null>(initialClosing);
-  const [transactions, setTransactions] = useState<CashTransaction[]>(initialTransactions);
-
-  // Search input query
-  const [searchQuery, setSearchQuery] = useState("");
 
   // Tab: "open" (Active) or "closed" (History)
   const [activeTab, setActiveTab] = useState<"open" | "closed">("open");
 
-  // Abertura Form State
-  const [openSaldoInicial, setOpenSaldoInicial] = useState("");
-  const [openOperatorName, setOpenOperatorName] = useState("Operador Padrão");
-  const [openRegisterName, setOpenRegisterName] = useState("Principal");
-  const [openLoading, setOpenLoading] = useState(false);
-  const [openError, setOpenError] = useState("");
+  // Search input query
+  const [searchQuery, setSearchQuery] = useState("");
 
   // New Order Form State
   const [clientName, setClientName] = useState("");
@@ -149,69 +114,28 @@ export function DashboardClient({
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  // Transaction Form State
-  const [txType, setTxType] = useState("SANGRIA");
-  const [txAmount, setTxAmount] = useState("");
-  const [txDescription, setTxDescription] = useState("");
-  const [txLoading, setTxLoading] = useState(false);
-  const [txError, setTxError] = useState("");
-
-  // Close Caixa Conference Modal State
+  // Fechamento Form State
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
-  const [countedCash, setCountedCash] = useState("");
-  const [closeRemarks, setCloseRemarks] = useState("");
+  const [operatorName, setOperatorName] = useState("Operador Padrão");
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeError, setCloseError] = useState("");
 
   // Report Modal State
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [reportClosing, setReportClosing] = useState<DailyClosing | null>(null);
 
-  // Reopen Modal State
-  const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
-  const [reopenReason, setReopenReason] = useState("");
-  const [reopenLoading, setReopenLoading] = useState(false);
-  const [reopenError, setReopenError] = useState("");
-
-  // Action states
+  // Global action loading/error
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState("");
 
-  // Sync state from server
+  // Sync state from server component
   useEffect(() => {
     setOrders(initialOrders);
     setClosing(initialClosing);
-    setTransactions(initialTransactions);
-  }, [initialOrders, initialClosing, initialTransactions]);
+  }, [initialOrders, initialClosing]);
 
-  const isReadOnly = closing?.status === "CLOSED";
+  const isReadOnly = closing !== null;
 
-  // Handle Abertura
-  const handleOpenCaixa = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const saldo = parseFloat(openSaldoInicial) || 0;
-    if (saldo < 0) {
-      setOpenError("O saldo inicial não pode ser negativo.");
-      return;
-    }
-    if (!openOperatorName.trim()) {
-      setOpenError("O operador é obrigatório.");
-      return;
-    }
-
-    setOpenLoading(true);
-    setOpenError("");
-    try {
-      await openCaixa(saldo, openOperatorName, openRegisterName);
-      router.refresh();
-    } catch (err: any) {
-      setOpenError(err.message || "Erro ao abrir o caixa.");
-    } finally {
-      setOpenLoading(false);
-    }
-  };
-
-  // Open a new comanda
+  // Handle opening a new comanda
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -264,23 +188,7 @@ export function DashboardClient({
     }
   };
 
-  // Cancel order (open comanda) instead of delete
-  const handleCancelOrder = async (id: string) => {
-    if (isReadOnly) return;
-    if (!confirm("Tem certeza que deseja CANCELAR esta comanda? Os itens e o valor acumulado serão arquivados como cancelamento.")) {
-      return;
-    }
-
-    setGlobalError("");
-    try {
-      await cancelOrder(id);
-      router.refresh();
-    } catch (err: any) {
-      setGlobalError(err.message || "Erro ao cancelar comanda.");
-    }
-  };
-
-  // Delete comanda registry (from history)
+  // Delete comanda registry from history
   const handleDeleteOrder = async (id: string) => {
     if (isReadOnly) return;
     if (!confirm("Excluir definitivamente esta comanda do histórico?")) {
@@ -313,7 +221,7 @@ export function DashboardClient({
       await updateOrderLineQuantity(lineId, newQty);
       router.refresh();
     } catch (err: any) {
-      setGlobalError(err.message || "Erro ao atualizar quantidade.");
+      setGlobalError(err.message || "Erro ao atualizar quantidade do item.");
     }
   };
 
@@ -333,97 +241,7 @@ export function DashboardClient({
     }
   };
 
-  // Register Sangria / Suprimento / Saída
-  const handleCreateTransaction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isReadOnly) return;
-
-    const amount = parseFloat(txAmount);
-    if (amount <= 0 || isNaN(amount)) {
-      setTxError("Insira um valor maior que zero.");
-      return;
-    }
-    if (!txDescription.trim()) {
-      setTxError("A descrição/motivo é obrigatória.");
-      return;
-    }
-
-    setTxLoading(true);
-    setTxError("");
-    try {
-      await createCashTransaction(txType, amount, txDescription);
-      setTxAmount("");
-      setTxDescription("");
-      router.refresh();
-    } catch (err: any) {
-      setTxError(err.message || "Erro ao registrar transação.");
-    } finally {
-      setTxLoading(false);
-    }
-  };
-
-  // Open Close Caixa Conference Modal
-  const handleOpenCloseModal = () => {
-    if (isReadOnly) return;
-    setCountedCash("");
-    setCloseRemarks("");
-    setCloseError("");
-    setIsCloseModalOpen(true);
-  };
-
-  // Confirm Close Caixa
-  const handleConfirmClose = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isReadOnly || !closing) return;
-
-    const cash = parseFloat(countedCash);
-    if (isNaN(cash) || cash < 0) {
-      setCloseError("Informe um valor contado em dinheiro válido.");
-      return;
-    }
-
-    setCloseLoading(true);
-    setCloseError("");
-    try {
-      await closeCaixa(closing.id, cash, closeRemarks);
-      setIsCloseModalOpen(false);
-      router.refresh();
-    } catch (err: any) {
-      setCloseError(err.message || "Erro ao fechar o caixa.");
-    } finally {
-      setCloseLoading(false);
-    }
-  };
-
-  // Open Reopen Modal
-  const handleOpenReopenModal = () => {
-    setReopenReason("");
-    setReopenError("");
-    setIsReopenModalOpen(true);
-  };
-
-  // Confirm Reopen Caixa
-  const handleConfirmReopen = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!closing || !reopenReason.trim()) {
-      setReopenError("O motivo é obrigatório.");
-      return;
-    }
-
-    setReopenLoading(true);
-    setReopenError("");
-    try {
-      await reopenCaixa(closing.id, reopenReason);
-      setIsReopenModalOpen(false);
-      router.refresh();
-    } catch (err: any) {
-      setReopenError(err.message || "Erro ao reabrir o caixa.");
-    } finally {
-      setReopenLoading(false);
-    }
-  };
-
-  // Open Modal to add item
+  // Open Consumption Modal
   const openConsumptionModal = (orderId: string) => {
     if (isReadOnly) return;
     setSelectedOrderId(orderId);
@@ -466,204 +284,119 @@ export function DashboardClient({
     }
   };
 
-  // Visualizar relatório fechado
-  const openReport = (c: DailyClosing) => {
-    setReportClosing(c);
-    setIsReportModalOpen(true);
-    logReportAction("IMPRESSAO", `Visualizou relatório de fechamento do dia ${new Date(c.data).toLocaleDateString()}`);
-  };
+  // Handle Fechamento do Dia
+  const handleCloseDia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isReadOnly) return;
+    if (!operatorName.trim()) {
+      setCloseError("O operador é obrigatório.");
+      return;
+    }
 
-  // Imprimir relatório
-  const handlePrintReport = () => {
-    window.print();
+    setCloseLoading(true);
+    setCloseError("");
+    try {
+      const res = await closeDia(operatorName);
+      setIsCloseModalOpen(false);
+      setClosing(res as any);
+      setIsReportModalOpen(true); // Open report directly upon success
+      router.refresh();
+    } catch (err: any) {
+      setCloseError(err.message || "Erro ao fechar o dia.");
+    } finally {
+      setCloseLoading(false);
+    }
   };
 
   // Filter orders by status and search query
   const openOrdersFiltered = orders.filter(
     (o) => o.status === "OPEN" && o.clientName.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  
-  // Closed today
   const closedOrdersFiltered = orders.filter(
     (o) => o.status === "CLOSED" && o.clientName.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  
-  // Cancelled today
-  const cancelledOrdersFiltered = orders.filter(
-    (o) => o.status === "CANCELLED" && o.clientName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const currentOrdersList = activeTab === "open" ? openOrdersFiltered : closedOrdersFiltered;
 
   // Unfiltered lists for statistics calculations
   const openOrdersStats = orders.filter((o) => o.status === "OPEN");
   const closedOrdersStats = orders.filter((o) => o.status === "CLOSED");
-  const cancelledOrdersStats = orders.filter((o) => o.status === "CANCELLED");
 
-  // Sum of all entries today
-  let totalDinheiro = 0;
-  let totalPix = 0;
-  let totalDebito = 0;
-  let totalCredito = 0;
-  let totalVale = 0;
-  let totalOutros = 0;
-  let totalEntradas = 0;
-
-  closedOrdersStats.forEach((order) => {
-    const orderSum = order.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0);
-    totalEntradas += orderSum;
-    const method = (order.paymentMethod || "OUTROS").toUpperCase();
-    if (method === "DINHEIRO") totalDinheiro += orderSum;
-    else if (method === "PIX") totalPix += orderSum;
-    else if (method === "DEBITO") totalDebito += orderSum;
-    else if (method === "CREDITO") totalCredito += orderSum;
-    else if (method === "VALE") totalVale += orderSum;
-    else totalOutros += orderSum;
-  });
-
-  // Today's open subtotal
+  // Sum of open comandas (pending values)
   const openSubtotalSum = openOrdersStats.reduce((acc, order) => {
     const orderSum = order.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0);
     return acc + orderSum;
   }, 0);
 
-  // Today's cancelled total
-  const cancelledTotalSum = cancelledOrdersStats.reduce((acc, order) => {
+  // Sum of closed comandas (billed values)
+  const closedBilledSum = closedOrdersStats.reduce((acc, order) => {
     const orderSum = order.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0);
     return acc + orderSum;
   }, 0);
 
-  // Sum today's cash transactions
-  let totalSuprimentos = 0;
-  let totalSangrias = 0;
-  let totalSaidas = 0;
+  // Total Sold Value = Payed + Pending
+  const totalSoldSum = openSubtotalSum + closedBilledSum;
 
-  transactions.forEach((tx) => {
-    if (tx.type === "SUPRIMENTO") totalSuprimentos += tx.amount;
-    else if (tx.type === "SANGRIA") totalSangrias += tx.amount;
-    else if (tx.type === "SAIDA") totalSaidas += tx.amount;
-  });
+  const totalComandas = orders.length;
 
-  const saldoInicial = closing?.saldoInicial || 0;
-  // Saldo Esperado em Dinheiro = Inicial + Dinheiro + Suprimentos - Sangrias - Saídas
-  const expectedCashBalance = saldoInicial + totalDinheiro + totalSuprimentos - totalSangrias - totalSaidas;
-
-  // Live conference difference
-  const diffVal = (parseFloat(countedCash) || 0) - expectedCashBalance;
-
-  // View: Abertura de Caixa
-  if (!closing) {
-    return (
-      <div className="flex justify-center items-center py-12">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-8 shadow-2xl space-y-6">
-          <div className="text-center space-y-2 border-b border-border/60 pb-4">
-            <Lock className="h-10 w-10 text-yellow-500 mx-auto" />
-            <h1 className="text-xl font-bold tracking-tight text-zinc-100 uppercase">Caixa Fechado</h1>
-            <p className="text-xs text-muted">Abra o movimento financeiro do dia para iniciar as operações.</p>
-          </div>
-
-          <form onSubmit={handleOpenCaixa} className="space-y-4">
-            <div>
-              <label htmlFor="openOperator" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                Nome do Operador
-              </label>
-              <input
-                id="openOperator"
-                type="text"
-                value={openOperatorName}
-                onChange={(e) => setOpenOperatorName(e.target.value)}
-                placeholder="Nome do Operador"
-                className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none"
-                disabled={openLoading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="openRegister" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                Identificação do Caixa
-              </label>
-              <input
-                id="openRegister"
-                type="text"
-                value={openRegisterName}
-                onChange={(e) => setOpenRegisterName(e.target.value)}
-                placeholder="Ex: Caixa 1, Principal"
-                className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none"
-                disabled={openLoading}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="openSaldo" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                Saldo Inicial / Fundo de Troco (R$)
-              </label>
-              <input
-                id="openSaldo"
-                type="number"
-                step="0.01"
-                min="0"
-                value={openSaldoInicial}
-                onChange={(e) => setOpenSaldoInicial(e.target.value)}
-                placeholder="0.00"
-                className="w-full rounded border border-border bg-zinc-950 px-3 py-2 font-mono text-sm text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
-                disabled={openLoading}
-              />
-            </div>
-
-            {openError && (
-              <p className="text-xs font-semibold uppercase tracking-wider text-red-500">
-                {openError}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={openLoading}
-              className="flex w-full items-center justify-center gap-2 rounded bg-zinc-100 px-4 py-3 text-xs font-black uppercase tracking-wider text-zinc-950 hover:bg-zinc-200 focus:outline-none disabled:opacity-50 transition-colors"
-            >
-              {openLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Unlock className="h-4 w-4" />
-              )}
-              <span>Abrir Caixa do Dia</span>
-            </button>
-          </form>
-        </div>
-      </div>
-    );
+  // Parse unpaid clients from JSON (if day is closed, load from saved record, else calculate from open orders)
+  let unpaidClientsList: { name: string; id: string; amount: number }[] = [];
+  if (isReadOnly && closing) {
+    try {
+      unpaidClientsList = JSON.parse(closing.unpaidClientsJson);
+    } catch (e) {
+      unpaidClientsList = [];
+    }
+  } else {
+    unpaidClientsList = openOrdersStats.map((o) => {
+      const amount = o.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0);
+      return {
+        name: o.clientName,
+        id: o.id,
+        amount,
+      };
+    });
   }
+
+  // Group payment methods (if day is closed, use from closing record, else calculate from closed orders)
+  const paymentMethodsSummary = isReadOnly && closing ? {
+    dinheiro: closing.totalDinheiro,
+    pix: closing.totalPix,
+    debito: closing.totalDebito,
+    credito: closing.totalCredito,
+    outros: closing.totalOutros
+  } : {
+    dinheiro: closedOrdersStats.filter(o => (o.paymentMethod || "").toUpperCase() === "DINHEIRO").reduce((s, o) => s + o.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0), 0),
+    pix: closedOrdersStats.filter(o => (o.paymentMethod || "").toUpperCase() === "PIX").reduce((s, o) => s + o.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0), 0),
+    debito: closedOrdersStats.filter(o => (o.paymentMethod || "").toUpperCase() === "DEBITO").reduce((s, o) => s + o.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0), 0),
+    credito: closedOrdersStats.filter(o => (o.paymentMethod || "").toUpperCase() === "CREDITO").reduce((s, o) => s + o.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0), 0),
+    outros: closedOrdersStats.filter(o => !["DINHEIRO", "PIX", "DEBITO", "CREDITO"].includes((o.paymentMethod || "").toUpperCase())).reduce((s, o) => s + o.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0), 0)
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
     <div className="space-y-8">
-      {/* Banner de Caixa Fechado */}
-      {isReadOnly && (
+      {/* Banner de Dia Fechado */}
+      {isReadOnly && closing && (
         <div className="rounded-lg border border-red-950 bg-red-950/20 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex gap-3">
             <Lock className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wide">Caixa Encerrado</h3>
+              <h3 className="text-sm font-bold text-zinc-100 uppercase tracking-wide">Dia Encerrado</h3>
               <p className="text-xs text-red-400 mt-1">
-                Este caixa foi fechado por <strong>{closing.usuarioId}</strong> em {new Date(closing.fechamento!).toLocaleString()}. Novas movimentações estão bloqueadas.
+                O movimento de hoje foi fechado por <strong>{closing.usuarioId}</strong> em {new Date(closing.fechamento).toLocaleString()}. Modificações estão bloqueadas.
               </p>
             </div>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => openReport(closing)}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded border border-border hover:border-zinc-500 bg-zinc-950 px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-200"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              <span>Ver Relatório</span>
-            </button>
-            <button
-              onClick={handleOpenReopenModal}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 rounded border border-red-900 bg-red-950/10 hover:bg-red-950/30 px-4 py-2 text-xs font-bold uppercase tracking-wider text-red-500"
-            >
-              <Unlock className="h-3.5 w-3.5" />
-              <span>Reabrir Caixa</span>
-            </button>
-          </div>
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 rounded border border-border hover:border-zinc-500 bg-zinc-950 px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-200"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>Visualizar Relatório do Dia</span>
+          </button>
         </div>
       )}
 
@@ -671,43 +404,45 @@ export function DashboardClient({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted">Comandas Abertas</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-muted">Comandas Abertas (Pendentes)</span>
             <Receipt className="h-4 w-4 text-yellow-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-zinc-100">{openOrdersStats.length}</span>
-            <span className="font-mono text-xs text-muted">ativas</span>
+            <span className="font-mono text-2xl font-black text-zinc-100">
+              {isReadOnly && closing ? unpaidClientsList.length : openOrdersStats.length}
+            </span>
+            <span className="font-mono text-xs text-muted">clientes</span>
           </div>
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted font-sans">Total em Aberto</span>
-            <DollarSign className="h-4 w-4 text-zinc-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-muted">Total Pendente (A Receber)</span>
+            <DollarSign className="h-4 w-4 text-red-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-zinc-100">
-              R$ {openSubtotalSum.toFixed(2)}
+            <span className="font-mono text-2xl font-black text-red-400">
+              R$ {isReadOnly && closing ? closing.totalPendente.toFixed(2) : openSubtotalSum.toFixed(2)}
             </span>
           </div>
         </div>
 
         <div className="rounded-lg border border-border bg-card p-4 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-muted">Total Recebido (Hoje)</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-muted">Total Vendido (Hoje)</span>
             <TrendingUp className="h-4 w-4 text-green-500" />
           </div>
           <div className="mt-2 flex items-baseline justify-between gap-2">
             <span className="font-mono text-2xl font-black text-green-400">
-              R$ {totalEntradas.toFixed(2)}
+              R$ {isReadOnly && closing ? closing.totalVendido.toFixed(2) : totalSoldSum.toFixed(2)}
             </span>
             {!isReadOnly && (
               <button 
-                onClick={handleOpenCloseModal}
+                onClick={() => setIsCloseModalOpen(true)}
                 className="rounded bg-red-600 hover:bg-red-700 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-white transition-all active:scale-[0.98] shadow-md flex items-center gap-1"
               >
                 <Lock className="h-3 w-3" />
-                <span>Fechar Caixa</span>
+                <span>Fechar Dia</span>
               </button>
             )}
           </div>
@@ -716,10 +451,8 @@ export function DashboardClient({
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         
-        {/* Coluna Lateral de Controles: Nova Comanda + Fluxo de Caixa */}
+        {/* Coluna Lateral: Abertura de Comanda */}
         <div className="lg:col-span-1 space-y-6">
-          
-          {/* Abertura de Comanda */}
           <div className="rounded-lg border border-border bg-card p-6">
             <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-zinc-100 flex items-center gap-2">
               <UserPlus className="h-4 w-4" />
@@ -731,7 +464,7 @@ export function DashboardClient({
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 placeholder="Nome do Cliente (Mesa / Cartão)"
-                className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
+                className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700 font-sans"
                 disabled={createLoading || isReadOnly}
               />
               <button
@@ -753,109 +486,13 @@ export function DashboardClient({
               </p>
             )}
           </div>
-
-          {/* Fluxo de Caixa (Lançamentos de Sangria/Suprimento/Saída) */}
-          <div className="rounded-lg border border-border bg-card p-6">
-            <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-zinc-100 flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              <span>Fluxo de Caixa (Lançamento)</span>
-            </h2>
-            <form onSubmit={handleCreateTransaction} className="space-y-3">
-              <div>
-                <label htmlFor="txType" className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted">Tipo</label>
-                <select
-                  id="txType"
-                  value={txType}
-                  onChange={(e) => setTxType(e.target.value)}
-                  className="w-full rounded border border-border bg-zinc-950 px-3 py-1.5 text-xs text-foreground focus:border-zinc-500 focus:outline-none"
-                  disabled={txLoading || isReadOnly}
-                >
-                  <option value="SANGRIA">SANGRIA (Retirada de Dinheiro)</option>
-                  <option value="SUPRIMENTO">SUPRIMENTO (Fundo de Troco)</option>
-                  <option value="SAIDA">SAÍDA (Pagamento/Despesa)</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="txAmount" className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted">Valor (R$)</label>
-                <input
-                  id="txAmount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full rounded border border-border bg-zinc-950 px-3 py-1.5 font-mono text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
-                  disabled={txLoading || isReadOnly}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="txDesc" className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted">Descrição / Motivo</label>
-                <input
-                  id="txDesc"
-                  type="text"
-                  value={txDescription}
-                  onChange={(e) => setTxDescription(e.target.value)}
-                  placeholder="Ex: Troco inicial, Sangria sangra, etc."
-                  className="w-full rounded border border-border bg-zinc-950 px-3 py-1.5 text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
-                  disabled={txLoading || isReadOnly}
-                />
-              </div>
-
-              {txError && (
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-red-500">
-                  {txError}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={txLoading || isReadOnly}
-                className="flex w-full items-center justify-center gap-1.5 rounded border border-border hover:border-zinc-500 bg-zinc-950/60 hover:bg-zinc-900 px-4 py-2 text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-50 transition-colors"
-              >
-                {txLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plus className="h-3.5 w-3.5" />
-                )}
-                <span>Lançar</span>
-              </button>
-            </form>
-
-            {/* Listagem de Lançamentos do Dia */}
-            <div className="mt-6 border-t border-border/40 pt-4 space-y-2">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted">Lançamentos de Hoje</h3>
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 text-xs">
-                {transactions.map((tx) => (
-                  <div key={tx.id} className="flex justify-between border-b border-border/10 pb-1.5">
-                    <div>
-                      <span className={`font-black mr-1 text-[9px] px-1 py-0.2 rounded border ${
-                        tx.type === "SUPRIMENTO" 
-                          ? "bg-green-950/20 border-green-900/40 text-green-400" 
-                          : tx.type === "SANGRIA" 
-                            ? "bg-yellow-950/20 border-yellow-900/40 text-yellow-400" 
-                            : "bg-red-950/20 border-red-900/40 text-red-400"
-                      }`}>{tx.type}</span>
-                      <span className="text-zinc-400 block mt-0.5 text-[10px] font-sans">{tx.description}</span>
-                    </div>
-                    <span className="font-mono text-zinc-300 font-semibold shrink-0">R$ {tx.amount.toFixed(2)}</span>
-                  </div>
-                ))}
-                {transactions.length === 0 && (
-                  <div className="text-[11px] italic text-zinc-600 text-center py-2">Nenhum lançamento hoje.</div>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
-        
+
         {/* Coluna Principal: Grade de Comandas */}
         <div className="lg:col-span-3 space-y-6">
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-              {activeTab === "open" ? "Comandas em Andamento" : "Comandas Fechadas / Faturadas hoje"}
+              {activeTab === "open" ? "Comandas Ativas" : "Comandas Fechadas / Histórico do Dia"}
             </h2>
 
             {/* Barra de Busca + Abas */}
@@ -905,6 +542,15 @@ export function DashboardClient({
               </div>
             </div>
           </div>
+
+          {globalError && (
+            <div className="rounded border border-red-900 bg-red-950/30 p-4 text-xs font-semibold uppercase tracking-wider text-red-500 flex items-center justify-between">
+              <span>{globalError}</span>
+              <button onClick={() => setGlobalError("")} className="text-red-400 hover:text-red-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
           {currentOrdersList.length === 0 ? (
             <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50">
@@ -966,7 +612,7 @@ export function DashboardClient({
                       </div>
                     </div>
 
-                    {/* Consumo interno do Card */}
+                    {/* Consumo interno */}
                     <div className="flex-1 p-4">
                       <h4 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                         Consumo
@@ -976,13 +622,13 @@ export function DashboardClient({
                           Nenhum consumo registrado.
                         </p>
                       ) : (
-                        <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        <ul className="space-y-2 max-h-48 overflow-y-auto pr-1 font-sans">
                           {order.items.map((item) => (
                             <li 
                               key={item.id} 
                               className="flex items-center justify-between text-xs border-b border-border/10 pb-1.5"
                             >
-                              <span className="text-zinc-300 font-sans truncate pr-2">
+                              <span className="text-zinc-300 truncate pr-2">
                                 {item.quantity}x <span className="font-semibold text-zinc-200">{item.product?.name || "Produto Excluído"}</span>
                               </span>
                               <div className="flex items-center gap-2 shrink-0">
@@ -1025,7 +671,7 @@ export function DashboardClient({
                     {/* Rodapé / Subtotal / Ações */}
                     <div className="border-t border-border/60 bg-zinc-950/40 p-4">
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-xs font-bold uppercase tracking-wider text-muted">
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted font-sans">
                           Total
                         </span>
                         <span className="font-mono text-base font-black text-zinc-100">
@@ -1054,15 +700,6 @@ export function DashboardClient({
                               <CheckCircle className="h-3.5 w-3.5" />
                               <span>Cobrar</span>
                             </button>
-                            
-                            <button
-                              onClick={() => handleCancelOrder(order.id)}
-                              disabled={isReadOnly}
-                              className="rounded border border-red-900 bg-red-950/10 hover:bg-red-950/30 p-2 text-red-500 transition-all focus:outline-none disabled:opacity-50"
-                              title="Cancelar Comanda"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
                           </>
                         ) : (
                           <button
@@ -1088,107 +725,77 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* Modal de Consumo (Lançamento de item) */}
+      {/* Modal de Consumo */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl animate-in fade-in zoom-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur-xs animate-in fade-in zoom-in duration-150">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl">
             <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-100 flex items-center gap-1.5">
                 <UtensilsCrossed className="h-4 w-4" />
                 <span>Adicionar Consumo</span>
               </h3>
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1 focus:outline-none transition-all"
-              >
+              <button onClick={() => setIsModalOpen(false)} className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {products.length === 0 ? (
-              <div className="space-y-4">
-                <p className="text-xs text-muted">
-                  Nenhum produto cadastrado. É necessário cadastrar produtos na página de produtos antes de lançar consumo.
-                </p>
-                <button
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    router.push("/produtos");
-                  }}
-                  className="w-full rounded bg-zinc-100 py-2 text-xs font-bold uppercase tracking-wider text-zinc-950 hover:bg-zinc-200 transition-all"
+            <form onSubmit={handleAddConsumption} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Produto</label>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none"
+                  disabled={modalLoading}
                 >
-                  Ir para Produtos
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} - R$ {p.price.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Quantidade</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                  className="w-full rounded border border-border bg-zinc-950 px-3 py-2 font-mono text-sm text-foreground focus:border-zinc-500 focus:outline-none"
+                  disabled={modalLoading}
+                />
+              </div>
+
+              {modalError && (
+                <p className="text-xs font-semibold uppercase tracking-wider text-red-500">{modalError}</p>
+              )}
+
+              <div className="flex gap-2 border-t border-border/60 pt-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 rounded border border-border bg-zinc-950 hover:bg-zinc-900 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-foreground transition-all"
+                  disabled={modalLoading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded bg-zinc-100 hover:bg-zinc-200 py-2 text-xs font-bold uppercase tracking-wider text-zinc-950"
+                  disabled={modalLoading}
+                >
+                  {modalLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                  <span>Confirmar</span>
                 </button>
               </div>
-            ) : (
-              <form onSubmit={handleAddConsumption} className="space-y-4">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                    Produto
-                  </label>
-                  <select
-                    value={selectedProductId}
-                    onChange={(e) => setSelectedProductId(e.target.value)}
-                    className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none"
-                    disabled={modalLoading}
-                  >
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} - R$ {p.price.toFixed(2)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                    Quantidade
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                    className="w-full rounded border border-border bg-zinc-950 px-3 py-2 font-mono text-sm text-foreground focus:border-zinc-500 focus:outline-none"
-                    disabled={modalLoading}
-                  />
-                </div>
-
-                {modalError && (
-                  <p className="text-xs font-semibold uppercase tracking-wider text-red-500">
-                    {modalError}
-                  </p>
-                )}
-
-                <div className="flex gap-2 border-t border-border/60 pt-4 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="flex-1 rounded border border-border bg-zinc-950 hover:bg-zinc-900 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-foreground transition-all"
-                    disabled={modalLoading}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded bg-zinc-100 hover:bg-zinc-200 py-2 text-xs font-bold uppercase tracking-wider text-zinc-950 transition-all"
-                    disabled={modalLoading}
-                  >
-                    {modalLoading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-3.5 w-3.5" />
-                    )}
-                    <span>Confirmar Inclusão</span>
-                  </button>
-                </div>
-              </form>
-            )}
+            </form>
           </div>
         </div>
       )}
 
-      {/* Modal de Checkout (Cobrança) */}
+      {/* Modal de Checkout */}
       {isCheckoutModalOpen && selectedOrderId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur-xs animate-fade-in">
           <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
@@ -1197,18 +804,14 @@ export function DashboardClient({
                 <Receipt className="h-4 w-4" />
                 <span>Fechar Comanda</span>
               </h3>
-              <button 
-                onClick={() => setIsCheckoutModalOpen(false)}
-                className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1 focus:outline-none transition-all"
-              >
+              <button onClick={() => setIsCheckoutModalOpen(false)} className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <form onSubmit={handleConfirmCheckout} className="space-y-6">
-              {/* Resumo da conta */}
               <div className="rounded bg-zinc-950 border border-border p-4 space-y-2">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Resumo do Consumo</h4>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Resumo</h4>
                 <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
                   {orders.find(o => o.id === selectedOrderId)?.items.map((item) => (
                     <div key={item.id} className="flex justify-between text-xs">
@@ -1218,18 +821,15 @@ export function DashboardClient({
                   ))}
                 </div>
                 <div className="border-t border-border/40 pt-2 flex justify-between items-baseline">
-                  <span className="text-xs font-bold text-zinc-400 uppercase">Total a Pagar</span>
+                  <span className="text-xs font-bold text-zinc-400 uppercase font-sans">Total a Pagar</span>
                   <span className="font-mono text-lg font-black text-zinc-100">
                     R$ {(orders.find(o => o.id === selectedOrderId)?.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) || 0).toFixed(2)}
                   </span>
                 </div>
               </div>
 
-              {/* Seleção do método de pagamento */}
               <div>
-                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-muted font-sans">
-                  Método de Pagamento
-                </label>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-muted font-sans">Forma de Pagamento</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { value: "DINHEIRO", label: "Dinheiro", color: "text-green-400 border-green-950 bg-green-950/20" },
@@ -1253,7 +853,6 @@ export function DashboardClient({
                 </div>
               </div>
 
-              {/* Botões de Ação */}
               <div className="flex gap-2 border-t border-border/60 pt-4">
                 <button
                   type="button"
@@ -1268,11 +867,7 @@ export function DashboardClient({
                   className="flex-1 flex items-center justify-center gap-1.5 rounded bg-green-500 hover:bg-green-600 text-zinc-950 py-2.5 text-xs font-bold uppercase tracking-wider transition-all active:scale-[0.98]"
                   disabled={checkoutLoading}
                 >
-                  {checkoutLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CheckCircle className="h-3.5 w-3.5" />
-                  )}
+                  {checkoutLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
                   <span>Finalizar</span>
                 </button>
               </div>
@@ -1281,167 +876,56 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Modal de Conferência de Fechamento de Caixa */}
+      {/* Modal de Fechamento do Dia */}
       {isCloseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/85 p-4 backdrop-blur-xs animate-fade-in overflow-y-auto">
-          <div className="w-full max-w-xl rounded-lg border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in duration-150 my-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/85 p-4 backdrop-blur-xs animate-in fade-in zoom-in duration-150">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4">
               <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-100 flex items-center gap-1.5">
                 <Lock className="h-4 w-4 text-red-500" />
-                <span>Conferência de Fechamento de Caixa</span>
+                <span>Fechar Movimento do Dia</span>
               </h3>
-              <button 
-                onClick={() => setIsCloseModalOpen(false)}
-                className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1 focus:outline-none transition-all"
-              >
+              <button onClick={() => setIsCloseModalOpen(false)} className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmClose} className="space-y-6">
-              
-              {/* Resumo Financeiro da Conferência */}
-              <div className="grid grid-cols-2 gap-4">
-                
-                {/* Entradas */}
-                <div className="rounded bg-zinc-950 border border-border p-4 space-y-2 col-span-2 sm:col-span-1">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Entradas por Pagamento</h4>
-                  <div className="space-y-1.5 font-sans text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Dinheiro:</span>
-                      <span className="font-mono text-zinc-300">R$ {totalDinheiro.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Pix:</span>
-                      <span className="font-mono text-zinc-300">R$ {totalPix.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Cartão Débito:</span>
-                      <span className="font-mono text-zinc-300">R$ {totalDebito.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Cartão Crédito:</span>
-                      <span className="font-mono text-zinc-300">R$ {totalCredito.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-border/30 pt-1.5 font-semibold">
-                      <span className="text-zinc-300 uppercase text-[10px]">Total Recebido:</span>
-                      <span className="font-mono text-zinc-200">R$ {totalEntradas.toFixed(2)}</span>
-                    </div>
-                  </div>
+            <form onSubmit={handleCloseDia} className="space-y-6">
+              <div className="rounded bg-zinc-950 border border-border p-4 space-y-3 text-xs">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Resumo Geral de Hoje</h4>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Total de Comandas:</span>
+                  <span className="font-mono text-zinc-100 font-bold">{totalComandas}</span>
                 </div>
-
-                {/* Movimentações de Dinheiro e Cancelamentos */}
-                <div className="rounded bg-zinc-950 border border-border p-4 space-y-3 col-span-2 sm:col-span-1 text-xs">
-                  <div className="space-y-1.5">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Fluxo Dinheiro</h4>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Saldo Inicial:</span>
-                      <span className="font-mono text-zinc-300">R$ {saldoInicial.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">(+) Entradas (Dinheiro):</span>
-                      <span className="font-mono text-zinc-300">R$ {totalDinheiro.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">(+) Suprimentos:</span>
-                      <span className="font-mono text-zinc-300">R$ {totalSuprimentos.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-yellow-500">
-                      <span>(-) Sangrias:</span>
-                      <span className="font-mono">R$ {totalSangrias.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-red-500">
-                      <span>(-) Saídas/Despesas:</span>
-                      <span className="font-mono">R$ {totalSaidas.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="border-t border-border/30 pt-2 space-y-1 text-xs">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-red-500/80">Cancelamentos</h4>
-                    <div className="flex justify-between text-red-400">
-                      <span>Qtd Comandas:</span>
-                      <span className="font-mono">{cancelledOrdersStats.length}</span>
-                    </div>
-                    <div className="flex justify-between text-red-400">
-                      <span>Valor Total:</span>
-                      <span className="font-mono">R$ {cancelledTotalSum.toFixed(2)}</span>
-                    </div>
-                  </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Total Vendido (Bruto):</span>
+                  <span className="font-mono text-zinc-100 font-bold">R$ {totalSoldSum.toFixed(2)}</span>
                 </div>
-
+                <div className="flex justify-between text-yellow-500 font-semibold border-t border-border/20 pt-2">
+                  <span>Total Pendente (A Receber):</span>
+                  <span className="font-mono">R$ {openSubtotalSum.toFixed(2)}</span>
+                </div>
               </div>
 
-              {/* Saldo Esperado em Dinheiro */}
-              <div className="rounded bg-zinc-950 border border-zinc-700/60 p-4 flex flex-col sm:flex-row items-baseline justify-between gap-2 border-dashed">
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Saldo Esperado (Somente Dinheiro Físico)</span>
-                  <p className="text-[10px] text-muted">Saldo Inicial + Dinheiro + Suprimentos - Sangrias - Saídas</p>
-                </div>
-                <span className="font-mono text-xl font-black text-zinc-100">R$ {expectedCashBalance.toFixed(2)}</span>
-              </div>
-
-              {/* Valor informado em dinheiro e cálculo de diferença */}
-              <div className="space-y-4 border-t border-border/60 pt-4">
-                <div className="grid grid-cols-2 gap-4 items-center">
-                  <div>
-                    <label htmlFor="closeCashInput" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                      Valor Contado em Dinheiro (R$)
-                    </label>
-                    <input
-                      id="closeCashInput"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={countedCash}
-                      onChange={(e) => setCountedCash(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full rounded border border-border bg-zinc-950 px-3 py-2 font-mono text-sm text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
-                      disabled={closeLoading}
-                    />
-                  </div>
-
-                  <div className="text-right space-y-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted block">Diferença Financeira</span>
-                    <span className={`font-mono text-lg font-black block ${
-                      diffVal > 0 
-                        ? "text-green-500" 
-                        : diffVal < 0 
-                          ? "text-red-500" 
-                          : "text-zinc-500"
-                    }`}>
-                      {diffVal > 0 
-                        ? `Sobra: + R$ ${diffVal.toFixed(2)}` 
-                        : diffVal < 0 
-                          ? `Falta: - R$ ${Math.abs(diffVal).toFixed(2)}` 
-                          : "R$ 0.00"
-                      }
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="closeObs" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">
-                    Observações / Ocorrências
-                  </label>
-                  <textarea
-                    id="closeObs"
-                    rows={2}
-                    value={closeRemarks}
-                    onChange={(e) => setCloseRemarks(e.target.value)}
-                    placeholder="Registre quebras de caixa, justificativas de diferenças, etc."
-                    className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700 resize-none"
-                    disabled={closeLoading}
-                  />
-                </div>
+              <div>
+                <label htmlFor="operatorInput" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                  Operador Responsável
+                </label>
+                <input
+                  id="operatorInput"
+                  type="text"
+                  value={operatorName}
+                  onChange={(e) => setOperatorName(e.target.value)}
+                  placeholder="Nome do operador"
+                  className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none"
+                  disabled={closeLoading}
+                />
               </div>
 
               {closeError && (
-                <p className="text-xs font-semibold uppercase tracking-wider text-red-500">
-                  {closeError}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-red-500">{closeError}</p>
               )}
 
-              {/* Botões de Ação */}
               <div className="flex gap-2 border-t border-border/60 pt-4">
                 <button
                   type="button"
@@ -1456,12 +940,8 @@ export function DashboardClient({
                   className="flex-1 flex items-center justify-center gap-1.5 rounded bg-red-600 hover:bg-red-700 text-white py-2.5 text-xs font-black uppercase tracking-wider transition-all active:scale-[0.98]"
                   disabled={closeLoading}
                 >
-                  {closeLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Lock className="h-3.5 w-3.5" />
-                  )}
-                  <span>Confirmar Fechamento</span>
+                  {closeLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+                  <span>Fechar Dia</span>
                 </button>
               </div>
             </form>
@@ -1469,78 +949,8 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Modal de Reabertura de Caixa */}
-      {isReopenModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl animate-in fade-in zoom-in duration-150">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-red-500 flex items-center gap-1.5">
-                <AlertCircle className="h-4 w-4" />
-                <span>Reabrir Caixa Fechado</span>
-              </h3>
-              <button 
-                onClick={() => setIsReopenModalOpen(false)}
-                className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1 focus:outline-none transition-all"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleConfirmReopen} className="space-y-4">
-              <p className="text-xs text-muted">
-                A reabertura do caixa permitirá a edição e inserção de novas comandas e lançamentos. Esta ação gera um log de auditoria permanente.
-              </p>
-              
-              <div>
-                <label htmlFor="reopenReasonInput" className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-200">
-                  Motivo da Reabertura
-                </label>
-                <textarea
-                  id="reopenReasonInput"
-                  rows={3}
-                  value={reopenReason}
-                  onChange={(e) => setReopenReason(e.target.value)}
-                  placeholder="Justifique a reabertura do caixa..."
-                  className="w-full rounded border border-border bg-zinc-950 px-3 py-2 text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700 resize-none"
-                  disabled={reopenLoading}
-                />
-              </div>
-
-              {reopenError && (
-                <p className="text-xs font-semibold uppercase tracking-wider text-red-500">
-                  {reopenError}
-                </p>
-              )}
-
-              <div className="flex gap-2 border-t border-border/60 pt-4 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsReopenModalOpen(false)}
-                  className="flex-1 rounded border border-border bg-zinc-950 hover:bg-zinc-900 py-2 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-foreground transition-all"
-                  disabled={reopenLoading}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded bg-red-600 hover:bg-red-700 text-white py-2 text-xs font-bold uppercase tracking-wider transition-all"
-                  disabled={reopenLoading}
-                >
-                  {reopenLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Unlock className="h-3.5 w-3.5" />
-                  )}
-                  <span>Reabrir Caixa</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Relatório Imprimível / Visualização PDF */}
-      {isReportModalOpen && reportClosing && (
+      {/* Modal de Relatório Simples */}
+      {isReportModalOpen && closing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/90 p-4 backdrop-blur-xs overflow-y-auto">
           <div className="w-full max-w-2xl rounded-lg border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in duration-150 my-8">
             <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4 no-print">
@@ -1550,7 +960,7 @@ export function DashboardClient({
               </h3>
               <div className="flex gap-2">
                 <button 
-                  onClick={handlePrintReport}
+                  onClick={handlePrint}
                   className="rounded border border-border hover:border-zinc-500 bg-zinc-950 hover:bg-zinc-900 px-3 py-1.5 text-xs font-bold uppercase text-zinc-200 transition-all flex items-center gap-1"
                 >
                   <Printer className="h-3.5 w-3.5" />
@@ -1565,171 +975,118 @@ export function DashboardClient({
               </div>
             </div>
 
-            {/* Corpo Imprimível (Apenas este elemento tem visibilidade print no CSS) */}
+            {/* Relatório Imprimível */}
             <div id="print-area" className="p-8 bg-white text-zinc-950 rounded shadow-sm font-sans space-y-8 select-all">
-              
-              {/* Cabeçalho do Relatório */}
               <div className="text-center border-b border-zinc-300 pb-4 space-y-1">
-                <h1 className="text-xl font-bold uppercase tracking-wider">Relatório de Fechamento do Caixa</h1>
-                <p className="text-xs text-zinc-500 uppercase font-semibold">Caixa: {reportClosing.caixaId} — Operador: {reportClosing.usuarioId}</p>
-                <p className="text-xs text-zinc-400 font-mono">ID Fechamento: {reportClosing.id}</p>
+                <h1 className="text-xl font-bold uppercase tracking-wider text-zinc-900">Relatório de Fechamento do Dia</h1>
+                <p className="text-xs text-zinc-500 uppercase font-semibold">Operador Responsável: {closing.usuarioId}</p>
+                <p className="text-xs text-zinc-400 font-mono">ID Fechamento: {closing.id}</p>
               </div>
 
               {/* Informações Gerais */}
               <div className="grid grid-cols-2 gap-4 text-xs border-b border-zinc-200 pb-4">
                 <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Data do Movimento</span>
-                  <span className="font-semibold text-zinc-800 text-[11px]">{new Date(reportClosing.data).toLocaleDateString()}</span>
+                  <span className="font-bold uppercase text-zinc-400 block text-[10px]">Data do Movimento</span>
+                  <span className="font-bold text-zinc-800 text-[11px]">{new Date(closing.data).toLocaleDateString()}</span>
                 </div>
                 <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Status</span>
-                  <span className="font-bold text-zinc-800 text-[11px] uppercase">{reportClosing.status === "CLOSED" ? "Fechado" : "Aberto"}</span>
-                </div>
-                <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Horário de Abertura</span>
-                  <span className="font-mono text-zinc-800 text-[11px]">{new Date(reportClosing.abertura).toLocaleString()}</span>
-                </div>
-                <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Horário de Fechamento</span>
-                  <span className="font-mono text-zinc-800 text-[11px]">
-                    {reportClosing.fechamento ? new Date(reportClosing.fechamento).toLocaleString() : "—"}
-                  </span>
+                  <span className="font-bold uppercase text-zinc-400 block text-[10px]">Horário do Fechamento</span>
+                  <span className="font-mono text-zinc-800 text-[11px]">{new Date(closing.fechamento).toLocaleString()}</span>
                 </div>
               </div>
 
-              {/* Entradas */}
+              {/* Resumo */}
+              <div className="space-y-1 text-xs">
+                <h3 className="text-xs font-black uppercase text-zinc-500 border-b border-zinc-200 pb-1">Resumo do Movimento</h3>
+                <div className="flex justify-between py-1">
+                  <span className="text-zinc-600">Quantidade de Comandas:</span>
+                  <span className="font-bold text-zinc-800">{closing.totalComandas}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-zinc-600">Valor Bruto Total Vendido:</span>
+                  <span className="font-bold font-mono text-zinc-900">R$ {closing.totalVendido.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Clientes que ainda não pagaram */}
               <div className="space-y-2">
-                <h3 className="text-xs font-black uppercase text-zinc-600 border-b border-zinc-200 pb-1">1. Entradas Consolidadas (Vendas)</h3>
-                <table className="w-full text-left text-xs">
+                <h3 className="text-xs font-black uppercase text-red-500 border-b border-zinc-200 pb-1">Clientes que ainda não pagaram</h3>
+                <table className="w-full text-left text-xs font-sans">
                   <thead>
                     <tr className="border-b border-zinc-200 font-bold text-zinc-500 text-[10px]">
-                      <th className="pb-1 uppercase">Forma de Pagamento</th>
-                      <th className="pb-1 text-right uppercase">Total Recebido</th>
+                      <th className="pb-1 uppercase">Nome do Cliente</th>
+                      <th className="pb-1 uppercase">Comanda ID</th>
+                      <th className="pb-1 text-right uppercase">Valor Pendente</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 font-sans">
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Dinheiro</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {reportClosing.totalDinheiro.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Pix</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {reportClosing.totalPix.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Cartão Débito</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {reportClosing.totalDebito.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Cartão Crédito</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {reportClosing.totalCredito.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Vale Alimentação / Refeição</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {reportClosing.totalVale.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Outros / Convênio</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {reportClosing.totalOutros.toFixed(2)}</td>
-                    </tr>
+                  <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                    {unpaidClientsList.map((client) => (
+                      <tr key={client.id}>
+                        <td className="py-1.5 font-semibold">{client.name}</td>
+                        <td className="py-1.5 font-mono text-[10px] text-zinc-500">{client.id.substring(0, 8)}...</td>
+                        <td className="py-1.5 text-right font-mono text-zinc-800">R$ {client.amount.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    {unpaidClientsList.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-3 text-center text-zinc-400 italic">Todos os clientes pagaram. Nenhum pendente.</td>
+                      </tr>
+                    )}
                     <tr className="font-bold border-t border-zinc-300">
-                      <td className="py-2 text-zinc-800 uppercase">Total das Entradas</td>
-                      <td className="py-2 text-right font-mono text-zinc-950">R$ {reportClosing.totalEntradas.toFixed(2)}</td>
+                      <td colSpan={2} className="py-2 text-zinc-800 uppercase">Total Pendente a Receber</td>
+                      <td className="py-2 text-right font-mono text-red-600">R$ {closing.totalPendente.toFixed(2)}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              {/* Movimentações Internas (Saídas / Sangrias / Suprimentos) */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-black uppercase text-zinc-600 border-b border-zinc-200 pb-1">2. Fluxo de Caixa Local (Fundo de Troco / Dinheiro)</h3>
-                <div className="grid grid-cols-2 gap-6 text-xs font-sans">
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">Saldo de Abertura (Fundo):</span>
-                      <span className="font-mono text-zinc-800">R$ {reportClosing.saldoInicial.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">(+) Total Dinheiro (Entrada):</span>
-                      <span className="font-mono text-zinc-800">R$ {reportClosing.totalDinheiro.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">(+) Total Suprimentos (Aportes):</span>
-                      <span className="font-mono text-zinc-800">R$ {reportClosing.totalSuprimentos.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-yellow-600">
-                      <span>(-) Total Sangrias (Retiradas):</span>
-                      <span className="font-mono">R$ {reportClosing.totalSangrias.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-red-600">
-                      <span>(-) Total Saídas (Despesas):</span>
-                      <span className="font-mono">R$ {reportClosing.totalSaidas.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="border-l border-zinc-200 pl-6 space-y-1">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Resumo Cancelamentos</span>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">Total Cancelado hoje:</span>
-                      <span className="font-mono text-red-600">R$ {reportClosing.totalCancelamentos.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
+              {/* Formas de pagamento */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase text-zinc-600 border-b border-zinc-200 pb-1">Formas de Pagamento (Recebido)</h3>
+                <table className="w-full text-left text-xs font-sans">
+                  <thead>
+                    <tr className="border-b border-zinc-200 font-bold text-zinc-500 text-[10px]">
+                      <th className="pb-1 uppercase">Forma de Pagamento</th>
+                      <th className="pb-1 text-right uppercase">Valor Recebido</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                    <tr>
+                      <td className="py-1.5">Dinheiro</td>
+                      <td className="py-1.5 text-right font-mono">R$ {paymentMethodsSummary.dinheiro.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">PIX</td>
+                      <td className="py-1.5 text-right font-mono">R$ {paymentMethodsSummary.pix.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">Cartão de Débito</td>
+                      <td className="py-1.5 text-right font-mono">R$ {paymentMethodsSummary.debito.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">Cartão de Crédito</td>
+                      <td className="py-1.5 text-right font-mono">R$ {paymentMethodsSummary.credito.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">Outros</td>
+                      <td className="py-1.5 text-right font-mono">R$ {paymentMethodsSummary.outros.toFixed(2)}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-
-              {/* Conciliação e Conferência Física */}
-              <div className="rounded border border-zinc-300 p-4 space-y-2 bg-zinc-50 font-sans text-xs">
-                <h3 className="text-xs font-black uppercase text-zinc-800">3. Conciliação de Caixa (Dinheiro Contado)</h3>
-                <div className="grid grid-cols-3 gap-2 py-2">
-                  <div>
-                    <span className="text-zinc-500 uppercase text-[9px] block">Saldo Esperado em Caixa</span>
-                    <span className="font-mono font-bold text-zinc-800 text-[13px]">R$ {reportClosing.saldoEsperado.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 uppercase text-[9px] block">Saldo Contado em Dinheiro</span>
-                    <span className="font-mono font-bold text-zinc-800 text-[13px]">R$ {reportClosing.saldoInformado.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 uppercase text-[9px] block">Diferença</span>
-                    <span className={`font-mono font-black text-[13px] ${
-                      reportClosing.diferenca > 0 
-                        ? "text-green-600" 
-                        : reportClosing.diferenca < 0 
-                          ? "text-red-600" 
-                          : "text-zinc-500"
-                    }`}>
-                      {reportClosing.diferenca > 0 
-                        ? `Sobra: + R$ ${reportClosing.diferenca.toFixed(2)}` 
-                        : reportClosing.diferenca < 0 
-                          ? `Falta: - R$ ${Math.abs(reportClosing.diferenca).toFixed(2)}` 
-                          : "R$ 0.00"
-                      }
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Observações */}
-              {reportClosing.observacoes && (
-                <div className="space-y-1 text-xs">
-                  <span className="font-bold text-zinc-500 uppercase text-[10px]">Observações / Justificativas</span>
-                  <p className="text-zinc-700 bg-zinc-50 border border-zinc-200 rounded p-3 font-sans italic">{reportClosing.observacoes}</p>
-                </div>
-              )}
 
               {/* Assinaturas */}
-              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs">
+              <div className="grid grid-cols-2 gap-8 pt-12 text-center text-xs">
                 <div className="space-y-4">
                   <div className="border-t border-zinc-400 mx-auto w-3/4 pt-2"></div>
-                  <span className="font-bold text-zinc-500 uppercase text-[9px]">Operador do Caixa</span>
-                  <p className="font-semibold text-zinc-800 mt-1">{reportClosing.usuarioId}</p>
+                  <span className="font-bold text-zinc-400 uppercase text-[9px]">Operador do Caixa</span>
+                  <p className="font-semibold text-zinc-800 mt-1">{closing.usuarioId}</p>
                 </div>
                 <div className="space-y-4">
                   <div className="border-t border-zinc-400 mx-auto w-3/4 pt-2"></div>
-                  <span className="font-bold text-zinc-500 uppercase text-[9px]">Gerência / Responsável</span>
+                  <span className="font-bold text-zinc-400 uppercase text-[9px]">Responsável</span>
                 </div>
               </div>
-
             </div>
           </div>
         </div>

@@ -6,38 +6,24 @@ import {
   X, 
   FileText, 
   Printer, 
-  Clock, 
-  Lock, 
-  Unlock, 
   Calendar,
-  AlertCircle
+  User
 } from "lucide-react";
-import { logReportAction } from "@/actions/closing";
 
 interface DailyClosing {
   id: string;
-  caixaId: string;
-  usuarioId: string;
   data: Date | string;
-  abertura: Date | string;
-  fechamento?: Date | string | null;
-  saldoInicial: number;
-  totalEntradas: number;
-  totalSaidas: number;
-  totalSangrias: number;
-  totalSuprimentos: number;
-  totalCancelamentos: number;
+  fechamento: Date | string;
+  usuarioId: string;
+  totalComandas: number;
+  totalVendido: number;
+  totalPendente: number;
   totalDinheiro: number;
   totalPix: number;
   totalDebito: number;
   totalCredito: number;
-  totalVale: number;
   totalOutros: number;
-  saldoEsperado: number;
-  saldoInformado: number;
-  diferenca: number;
-  observacoes?: string | null;
-  status: string;
+  unpaidClientsJson: string;
 }
 
 interface ClosingHistoryClientProps {
@@ -49,7 +35,6 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
 
   // Filters state
   const [searchOperator, setSearchOperator] = useState("");
-  const [searchRegister, setSearchRegister] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -63,10 +48,7 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
     if (searchOperator && !c.usuarioId.toLowerCase().includes(searchOperator.toLowerCase())) {
       return false;
     }
-    // Filter by Caixa / Register
-    if (searchRegister && !c.caixaId.toLowerCase().includes(searchRegister.toLowerCase())) {
-      return false;
-    }
+    
     // Filter by date range
     const cDate = new Date(c.data);
     cDate.setHours(0,0,0,0);
@@ -89,12 +71,21 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
   const openReport = (c: DailyClosing) => {
     setSelectedClosing(c);
     setIsReportModalOpen(true);
-    logReportAction("IMPRESSAO", `Visualizou relatório de fechamento do dia ${new Date(c.data).toLocaleDateString()}`);
   };
 
   const handlePrint = () => {
     window.print();
   };
+
+  // Parse unpaid clients for the modal display
+  let unpaidClientsList: { name: string; id: string; amount: number }[] = [];
+  if (selectedClosing) {
+    try {
+      unpaidClientsList = JSON.parse(selectedClosing.unpaidClientsJson);
+    } catch (e) {
+      unpaidClientsList = [];
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -102,28 +93,16 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
       {/* Painel de Filtros */}
       <div className="rounded-lg border border-border bg-card p-6 no-print">
         <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-zinc-100">Filtros de Busca</h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           
           <div>
-            <label htmlFor="filterOperator" className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted">Operador</label>
+            <label htmlFor="filterOperator" className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted">Responsável</label>
             <input
               id="filterOperator"
               type="text"
               placeholder="Nome do operador..."
               value={searchOperator}
               onChange={(e) => setSearchOperator(e.target.value)}
-              className="w-full rounded border border-border bg-zinc-950 px-3 py-1.5 text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="filterRegister" className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted">Caixa</label>
-            <input
-              id="filterRegister"
-              type="text"
-              placeholder="Identificação do caixa..."
-              value={searchRegister}
-              onChange={(e) => setSearchRegister(e.target.value)}
               className="w-full rounded border border-border bg-zinc-950 px-3 py-1.5 text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
             />
           </div>
@@ -153,12 +132,11 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
         </div>
 
         {/* Limpar Filtros */}
-        {(searchOperator || searchRegister || startDate || endDate) && (
+        {(searchOperator || startDate || endDate) && (
           <div className="mt-4 flex justify-end">
             <button
               onClick={() => {
                 setSearchOperator("");
-                setSearchRegister("");
                 setStartDate("");
                 setEndDate("");
               }}
@@ -174,12 +152,12 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
       {/* Lista de Fechamentos */}
       <div className="rounded-lg border border-border bg-card p-6 no-print">
         <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-zinc-500">
-          Resultados ({filteredClosings.length})
+          Fechamentos de Dia ({filteredClosings.length})
         </h2>
 
         {filteredClosings.length === 0 ? (
           <div className="flex h-36 flex-col items-center justify-center rounded border border-dashed border-border bg-zinc-950/50">
-            <p className="text-sm text-muted">Nenhum fechamento de caixa encontrado com os filtros atuais.</p>
+            <p className="text-sm text-muted">Nenhum fechamento encontrado com os filtros atuais.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -187,14 +165,12 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
               <thead>
                 <tr className="border-b border-border font-bold uppercase tracking-wider text-zinc-500">
                   <th className="py-3 px-4">Data</th>
-                  <th className="py-3 px-4">Caixa</th>
-                  <th className="py-3 px-4">Operador</th>
-                  <th className="py-3 px-4 text-right">Inicial</th>
-                  <th className="py-3 px-4 text-right">Entradas</th>
-                  <th className="py-3 px-4 text-right">Dinheiro Contado</th>
-                  <th className="py-3 px-4 text-right">Diferença</th>
+                  <th className="py-3 px-4">Responsável</th>
+                  <th className="py-3 px-4 text-center">Qtd Comandas</th>
+                  <th className="py-3 px-4 text-right">Total Vendido</th>
+                  <th className="py-3 px-4 text-right">Total Pendente</th>
                   <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-right">Relatório</th>
+                  <th className="py-3 px-4 text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
@@ -207,38 +183,13 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
                         <Calendar className="h-3.5 w-3.5 text-zinc-500" />
                         <span>{closingDate}</span>
                       </td>
-                      <td className="py-3.5 px-4 text-zinc-300 font-semibold">{c.caixaId}</td>
-                      <td className="py-3.5 px-4 text-zinc-300">{c.usuarioId}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-zinc-400">R$ {c.saldoInicial.toFixed(2)}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-zinc-300 font-semibold">R$ {c.totalEntradas.toFixed(2)}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-zinc-200">
-                        {c.status === "CLOSED" ? `R$ ${c.saldoInformado.toFixed(2)}` : "—"}
-                      </td>
-                      <td className={`py-3.5 px-4 text-right font-mono font-bold ${
-                        c.status !== "CLOSED" 
-                          ? "text-zinc-500" 
-                          : c.diferenca > 0 
-                            ? "text-green-500" 
-                            : c.diferenca < 0 
-                              ? "text-red-500" 
-                              : "text-zinc-400"
-                      }`}>
-                        {c.status !== "CLOSED" 
-                          ? "—" 
-                          : c.diferenca > 0 
-                            ? `+ R$ ${c.diferenca.toFixed(2)}` 
-                            : c.diferenca < 0 
-                              ? `- R$ ${Math.abs(c.diferenca).toFixed(2)}` 
-                              : "R$ 0.00"
-                        }
-                      </td>
+                      <td className="py-3.5 px-4 text-zinc-300 font-semibold">{c.usuarioId}</td>
+                      <td className="py-3.5 px-4 text-center font-mono text-zinc-300">{c.totalComandas}</td>
+                      <td className="py-3.5 px-4 text-right font-mono text-zinc-200 font-bold">R$ {c.totalVendido.toFixed(2)}</td>
+                      <td className="py-3.5 px-4 text-right font-mono text-red-400 font-semibold">R$ {c.totalPendente.toFixed(2)}</td>
                       <td className="py-3.5 px-4 text-center">
-                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                          c.status === "OPEN" 
-                            ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-500" 
-                            : "bg-zinc-950 border-zinc-800 text-zinc-500"
-                        }`}>
-                          {c.status === "OPEN" ? "Aberto" : "Fechado"}
+                        <span className="inline-flex rounded-full border bg-zinc-950 border-zinc-800 px-2 py-0.5 text-[9px] font-black uppercase text-zinc-500 tracking-wider">
+                          Fechado
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
@@ -289,157 +240,110 @@ export function ClosingHistoryClient({ initialClosings }: ClosingHistoryClientPr
             <div id="print-area" className="p-8 bg-white text-zinc-950 rounded shadow-sm font-sans space-y-8 select-all">
               
               <div className="text-center border-b border-zinc-300 pb-4 space-y-1">
-                <h1 className="text-xl font-bold uppercase tracking-wider">Relatório de Fechamento do Caixa</h1>
-                <p className="text-xs text-zinc-500 uppercase font-semibold">Caixa: {selectedClosing.caixaId} — Operador: {selectedClosing.usuarioId}</p>
+                <h1 className="text-xl font-bold uppercase tracking-wider text-zinc-900">Relatório de Fechamento do Dia</h1>
+                <p className="text-xs text-zinc-500 uppercase font-semibold">Operador Responsável: {selectedClosing.usuarioId}</p>
                 <p className="text-xs text-zinc-400 font-mono">ID Fechamento: {selectedClosing.id}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4 text-xs border-b border-zinc-200 pb-4">
                 <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Data do Movimento</span>
-                  <span className="font-semibold text-zinc-800 text-[11px]">{new Date(selectedClosing.data).toLocaleDateString()}</span>
+                  <span className="font-bold uppercase text-zinc-400 block text-[10px]">Data do Movimento</span>
+                  <span className="font-bold text-zinc-800 text-[11px]">{new Date(selectedClosing.data).toLocaleDateString()}</span>
                 </div>
                 <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Status</span>
-                  <span className="font-bold text-zinc-800 text-[11px] uppercase">{selectedClosing.status === "CLOSED" ? "Fechado" : "Aberto"}</span>
-                </div>
-                <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Horário de Abertura</span>
-                  <span className="font-mono text-zinc-800 text-[11px]">{new Date(selectedClosing.abertura).toLocaleString()}</span>
-                </div>
-                <div>
-                  <span className="font-bold uppercase text-zinc-500 block text-[10px]">Horário de Fechamento</span>
-                  <span className="font-mono text-zinc-800 text-[11px]">
-                    {selectedClosing.fechamento ? new Date(selectedClosing.fechamento).toLocaleString() : "—"}
-                  </span>
+                  <span className="font-bold uppercase text-zinc-400 block text-[10px]">Horário do Fechamento</span>
+                  <span className="font-mono text-zinc-800 text-[11px]">{new Date(selectedClosing.fechamento).toLocaleString()}</span>
                 </div>
               </div>
 
+              <div className="space-y-1 text-xs">
+                <h3 className="text-xs font-black uppercase text-zinc-500 border-b border-zinc-200 pb-1">Resumo do Movimento</h3>
+                <div className="flex justify-between py-1">
+                  <span className="text-zinc-600">Quantidade de Comandas:</span>
+                  <span className="font-bold text-zinc-800">{selectedClosing.totalComandas}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-zinc-600">Valor Bruto Total Vendido:</span>
+                  <span className="font-bold font-mono text-zinc-900">R$ {selectedClosing.totalVendido.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Clientes que ainda não pagaram */}
               <div className="space-y-2">
-                <h3 className="text-xs font-black uppercase text-zinc-600 border-b border-zinc-200 pb-1">1. Entradas Consolidadas (Vendas)</h3>
-                <table className="w-full text-left text-xs">
+                <h3 className="text-xs font-black uppercase text-red-500 border-b border-zinc-200 pb-1">Clientes que ainda não pagaram</h3>
+                <table className="w-full text-left text-xs font-sans">
                   <thead>
                     <tr className="border-b border-zinc-200 font-bold text-zinc-500 text-[10px]">
-                      <th className="pb-1 uppercase">Forma de Pagamento</th>
-                      <th className="pb-1 text-right uppercase">Total Recebido</th>
+                      <th className="pb-1 uppercase">Nome do Cliente</th>
+                      <th className="pb-1 uppercase">Comanda ID</th>
+                      <th className="pb-1 text-right uppercase">Valor Pendente</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 font-sans">
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Dinheiro</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {selectedClosing.totalDinheiro.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Pix</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {selectedClosing.totalPix.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Cartão Débito</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {selectedClosing.totalDebito.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Cartão Crédito</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {selectedClosing.totalCredito.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Vale Alimentação / Refeição</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {selectedClosing.totalVale.toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1.5 font-semibold text-zinc-700">Outros / Convênio</td>
-                      <td className="py-1.5 text-right font-mono text-zinc-800">R$ {selectedClosing.totalOutros.toFixed(2)}</td>
-                    </tr>
+                  <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                    {unpaidClientsList.map((client) => (
+                      <tr key={client.id}>
+                        <td className="py-1.5 font-semibold">{client.name}</td>
+                        <td className="py-1.5 font-mono text-[10px] text-zinc-500">{client.id.substring(0, 8)}...</td>
+                        <td className="py-1.5 text-right font-mono text-zinc-800">R$ {client.amount.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    {unpaidClientsList.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-3 text-center text-zinc-400 italic">Todos os clientes pagaram. Nenhum pendente.</td>
+                      </tr>
+                    )}
                     <tr className="font-bold border-t border-zinc-300">
-                      <td className="py-2 text-zinc-800 uppercase">Total das Entradas</td>
-                      <td className="py-2 text-right font-mono text-zinc-950">R$ {selectedClosing.totalEntradas.toFixed(2)}</td>
+                      <td colSpan={2} className="py-2 text-zinc-800 uppercase">Total Pendente a Receber</td>
+                      <td className="py-2 text-right font-mono text-red-600">R$ {selectedClosing.totalPendente.toFixed(2)}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              <div className="space-y-3">
-                <h3 className="text-xs font-black uppercase text-zinc-600 border-b border-zinc-200 pb-1">2. Fluxo de Caixa Local (Fundo de Troco / Dinheiro)</h3>
-                <div className="grid grid-cols-2 gap-6 text-xs font-sans">
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">Saldo de Abertura (Fundo):</span>
-                      <span className="font-mono text-zinc-800">R$ {selectedClosing.saldoInicial.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">(+) Total Dinheiro (Entrada):</span>
-                      <span className="font-mono text-zinc-800">R$ {selectedClosing.totalDinheiro.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">(+) Total Suprimentos (Aportes):</span>
-                      <span className="font-mono text-zinc-800">R$ {selectedClosing.totalSuprimentos.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-yellow-600">
-                      <span>(-) Total Sangrias (Retiradas):</span>
-                      <span className="font-mono">R$ {selectedClosing.totalSangrias.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-red-600">
-                      <span>(-) Total Saídas (Despesas):</span>
-                      <span className="font-mono">R$ {selectedClosing.totalSaidas.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="border-l border-zinc-200 pl-6 space-y-1">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Resumo Cancelamentos</span>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-600">Total Cancelado hoje:</span>
-                      <span className="font-mono text-red-600">R$ {selectedClosing.totalCancelamentos.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
+              {/* Formas de pagamento */}
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase text-zinc-600 border-b border-zinc-200 pb-1">Formas de Pagamento (Recebido)</h3>
+                <table className="w-full text-left text-xs font-sans">
+                  <thead>
+                    <tr className="border-b border-zinc-200 font-bold text-zinc-500 text-[10px]">
+                      <th className="pb-1 uppercase">Forma de Pagamento</th>
+                      <th className="pb-1 text-right uppercase">Valor Recebido</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                    <tr>
+                      <td className="py-1.5">Dinheiro</td>
+                      <td className="py-1.5 text-right font-mono">R$ {selectedClosing.totalDinheiro.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">PIX</td>
+                      <td className="py-1.5 text-right font-mono">R$ {selectedClosing.totalPix.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">Cartão de Débito</td>
+                      <td className="py-1.5 text-right font-mono">R$ {selectedClosing.totalDebito.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">Cartão de Crédito</td>
+                      <td className="py-1.5 text-right font-mono">R$ {selectedClosing.totalCredito.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="py-1.5">Outros</td>
+                      <td className="py-1.5 text-right font-mono">R$ {selectedClosing.totalOutros.toFixed(2)}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
-              <div className="rounded border border-zinc-300 p-4 space-y-2 bg-zinc-50 font-sans text-xs">
-                <h3 className="text-xs font-black uppercase text-zinc-800">3. Conciliação de Caixa (Dinheiro Contado)</h3>
-                <div className="grid grid-cols-3 gap-2 py-2">
-                  <div>
-                    <span className="text-zinc-500 uppercase text-[9px] block">Saldo Esperado em Caixa</span>
-                    <span className="font-mono font-bold text-zinc-800 text-[13px]">R$ {selectedClosing.saldoEsperado.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 uppercase text-[9px] block">Saldo Contado em Dinheiro</span>
-                    <span className="font-mono font-bold text-zinc-800 text-[13px]">R$ {selectedClosing.saldoInformado.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 uppercase text-[9px] block">Diferença</span>
-                    <span className={`font-mono font-black text-[13px] ${
-                      selectedClosing.diferenca > 0 
-                        ? "text-green-600" 
-                        : selectedClosing.diferenca < 0 
-                          ? "text-red-600" 
-                          : "text-zinc-500"
-                    }`}>
-                      {selectedClosing.diferenca > 0 
-                        ? `Sobra: + R$ ${selectedClosing.diferenca.toFixed(2)}` 
-                        : selectedClosing.diferenca < 0 
-                          ? `Falta: - R$ ${Math.abs(selectedClosing.diferenca).toFixed(2)}` 
-                          : "R$ 0.00"
-                      }
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {selectedClosing.observacoes && (
-                <div className="space-y-1 text-xs">
-                  <span className="font-bold text-zinc-500 uppercase text-[10px]">Observações / Justificativas</span>
-                  <p className="text-zinc-700 bg-zinc-50 border border-zinc-200 rounded p-3 font-sans italic">{selectedClosing.observacoes}</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-xs">
+              <div className="grid grid-cols-2 gap-8 pt-12 text-center text-xs">
                 <div className="space-y-4">
                   <div className="border-t border-zinc-400 mx-auto w-3/4 pt-2"></div>
-                  <span className="font-bold text-zinc-500 uppercase text-[9px]">Operador do Caixa</span>
+                  <span className="font-bold text-zinc-400 uppercase text-[9px]">Operador do Caixa</span>
                   <p className="font-semibold text-zinc-800 mt-1">{selectedClosing.usuarioId}</p>
                 </div>
                 <div className="space-y-4">
                   <div className="border-t border-zinc-400 mx-auto w-3/4 pt-2"></div>
-                  <span className="font-bold text-zinc-500 uppercase text-[9px]">Gerência / Responsável</span>
+                  <span className="font-bold text-zinc-400 uppercase text-[9px]">Responsável</span>
                 </div>
               </div>
 

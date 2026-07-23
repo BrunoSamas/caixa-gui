@@ -3,8 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
-// Helper to ensure cash register is open and not closed for today
-async function assertCaixaAberto() {
+// Helper to ensure the day is not closed
+async function assertDiaAberto() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -12,17 +12,13 @@ async function assertCaixaAberto() {
     where: { data: todayStart },
   });
 
-  if (!closing) {
-    throw new Error("O caixa do dia de hoje ainda não foi aberto.");
-  }
-
-  if (closing.status === "CLOSED") {
-    throw new Error("O caixa de hoje está fechado. Nenhuma modificação é permitida.");
+  if (closing) {
+    throw new Error("O dia de hoje está fechado. Nenhuma modificação ou nova venda é permitida.");
   }
 }
 
 export async function createOrder(clientName: string) {
-  await assertCaixaAberto();
+  await assertDiaAberto();
 
   if (!clientName.trim()) {
     throw new Error("O nome do cliente é obrigatório.");
@@ -45,7 +41,7 @@ export async function createOrder(clientName: string) {
 }
 
 export async function addItemToOrder(orderId: string, productId: string, quantity: number) {
-  await assertCaixaAberto();
+  await assertDiaAberto();
 
   if (quantity <= 0 || isNaN(quantity)) {
     throw new Error("A quantidade deve ser maior que zero.");
@@ -109,7 +105,7 @@ export async function addItemToOrder(orderId: string, productId: string, quantit
 }
 
 export async function closeOrder(orderId: string, paymentMethod: string) {
-  await assertCaixaAberto();
+  await assertDiaAberto();
 
   if (!paymentMethod) {
     throw new Error("O método de pagamento é obrigatório.");
@@ -132,27 +128,8 @@ export async function closeOrder(orderId: string, paymentMethod: string) {
   }
 }
 
-export async function cancelOrder(orderId: string) {
-  await assertCaixaAberto();
-
-  try {
-    const order = await prisma.customerOrder.update({
-      where: { id: orderId },
-      data: {
-        status: "CANCELLED",
-      },
-    });
-
-    revalidatePath("/");
-    return order;
-  } catch (error: any) {
-    console.error("Error in cancelOrder:", error);
-    throw new Error(error.message || "Erro ao cancelar comanda.");
-  }
-}
-
 export async function updateOrderLineQuantity(lineId: string, quantity: number) {
-  await assertCaixaAberto();
+  await assertDiaAberto();
 
   if (quantity <= 0 || isNaN(quantity)) {
     throw new Error("A quantidade deve ser maior que zero.");
@@ -185,7 +162,7 @@ export async function updateOrderLineQuantity(lineId: string, quantity: number) 
 }
 
 export async function deleteOrderLine(lineId: string) {
-  await assertCaixaAberto();
+  await assertDiaAberto();
 
   try {
     const line = await prisma.orderLine.findUnique({
@@ -213,7 +190,7 @@ export async function deleteOrderLine(lineId: string) {
 }
 
 export async function deleteOrder(orderId: string) {
-  await assertCaixaAberto();
+  await assertDiaAberto();
 
   try {
     await prisma.customerOrder.delete({
