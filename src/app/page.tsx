@@ -10,8 +10,22 @@ export default async function DashboardPage() {
     orderBy: { name: "asc" },
   });
 
-  // Fetch orders, including line items and product details for display
+  // Fetch orders: all OPEN orders, but only CLOSED orders created today (from midnight onwards)
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   const orders = await prisma.customerOrder.findMany({
+    where: {
+      OR: [
+        { status: "OPEN" },
+        {
+          status: "CLOSED",
+          createdAt: {
+            gte: todayStart,
+          },
+        },
+      ],
+    },
     include: {
       items: {
         include: {

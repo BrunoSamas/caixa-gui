@@ -12,11 +12,19 @@ import {
   Loader2, 
   UtensilsCrossed, 
   DollarSign,
-  ChevronRight,
   TrendingUp,
-  Receipt
+  Receipt,
+  Search,
+  ChevronRight
 } from "lucide-react";
-import { createOrder, addItemToOrder, closeOrder, deleteOrder } from "@/actions/orders";
+import { 
+  createOrder, 
+  addItemToOrder, 
+  closeOrder, 
+  deleteOrder,
+  updateOrderLineQuantity,
+  deleteOrderLine
+} from "@/actions/orders";
 
 interface Product {
   id: string;
@@ -36,6 +44,7 @@ interface CustomerOrder {
   id: string;
   clientName: string;
   status: string;
+  paymentMethod?: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
   items: OrderLine[];
@@ -56,6 +65,9 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
   // Tab: "open" (Active) or "closed" (History)
   const [activeTab, setActiveTab] = useState<"open" | "closed">("open");
 
+  // Search input query
+  const [searchQuery, setSearchQuery] = useState("");
+
   // New Order Form State
   const [clientName, setClientName] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
@@ -69,8 +81,13 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
   const [modalLoading, setModalLoading] = useState(false);
   const [modalError, setModalError] = useState("");
 
+  // Checkout Modal State
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [checkoutOrderId, setCheckoutOrderId] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState("PIX");
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
   // Action states
-  const [closeLoadingId, setCloseLoadingId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState("");
 
@@ -102,22 +119,31 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
     }
   };
 
-  // Close comanda (charge customer)
-  const handleCloseOrder = async (id: string) => {
-    if (!confirm("Confirmar o fechamento desta comanda? O consumo não poderá mais ser alterado.")) {
-      return;
-    }
+  // Open Checkout Modal
+  const openCheckoutModal = (orderId: string) => {
+    setCheckoutOrderId(orderId);
+    setPaymentMethod("PIX");
+    setGlobalError("");
+    setIsCheckoutModalOpen(true);
+  };
 
-    setCloseLoadingId(id);
+  // Confirm Checkout and close comanda
+  const handleConfirmCheckout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkoutOrderId) return;
+
+    setCheckoutLoading(true);
     setGlobalError("");
 
     try {
-      await closeOrder(id);
+      await closeOrder(checkoutOrderId, paymentMethod);
+      setIsCheckoutModalOpen(false);
+      setCheckoutOrderId(null);
       router.refresh();
     } catch (err: any) {
       setGlobalError(err.message || "Erro ao fechar comanda.");
     } finally {
-      setCloseLoadingId(null);
+      setCheckoutLoading(false);
     }
   };
 
@@ -137,6 +163,37 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
       setGlobalError(err.message || "Erro ao excluir comanda.");
     } finally {
       setDeleteLoadingId(null);
+    }
+  };
+
+  // Update item quantity in an active order
+  const handleUpdateItemQuantity = async (lineId: string, newQty: number) => {
+    if (newQty <= 0) {
+      handleDeleteItem(lineId);
+      return;
+    }
+
+    setGlobalError("");
+    try {
+      await updateOrderLineQuantity(lineId, newQty);
+      router.refresh();
+    } catch (err: any) {
+      setGlobalError(err.message || "Erro ao atualizar quantidade do item.");
+    }
+  };
+
+  // Delete item from an active order
+  const handleDeleteItem = async (lineId: string) => {
+    if (!confirm("Remover este item da comanda?")) {
+      return;
+    }
+
+    setGlobalError("");
+    try {
+      await deleteOrderLine(lineId);
+      router.refresh();
+    } catch (err: any) {
+      setGlobalError(err.message || "Erro ao remover item.");
     }
   };
 
@@ -181,21 +238,42 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
     }
   };
 
-  // Filter orders by status
-  const openOrders = orders.filter((o) => o.status === "OPEN");
-  const closedOrders = orders.filter((o) => o.status === "CLOSED");
-  const currentOrdersList = activeTab === "open" ? openOrders : closedOrders;
+  // Filter orders by status and search query
+  const openOrdersFiltered = orders.filter(
+    (o) => o.status === "OPEN" && o.clientName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const closedOrdersFiltered = orders.filter(
+    (o) => o.status === "CLOSED" && o.clientName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const currentOrdersList = activeTab === "open" ? openOrdersFiltered : closedOrdersFiltered;
+
+  // Unfiltered orders for statistics calculations
+  const openOrdersStats = orders.filter((o) => o.status === "OPEN");
+  const closedOrdersStats = orders.filter((o) => o.status === "CLOSED");
 
   // Statistics calculation for daily dashboard
-  const openSubtotalSum = openOrders.reduce((acc, order) => {
+  const openSubtotalSum = openOrdersStats.reduce((acc, order) => {
     const orderSum = order.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0);
     return acc + orderSum;
   }, 0);
 
-  const closedBilledSum = closedOrders.reduce((acc, order) => {
+  const closedBilledSum = closedOrdersStats.reduce((acc, order) => {
     const orderSum = order.items.reduce((s, item) => s + item.quantity * item.unitPrice, 0);
     return acc + orderSum;
   }, 0);
+
+  // Selected checkout order for modal display
+  const selectedCheckoutOrder = orders.find(o => o.id === checkoutOrderId);
+  const selectedCheckoutTotal = selectedCheckoutOrder
+    ? selectedCheckoutOrder.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
+    : 0;
+
+  const paymentMethodsList = [
+    { value: "PIX", label: "Pix", color: "text-teal-400 border-teal-950 bg-teal-950/20 active:bg-teal-900/40" },
+    { value: "DINHEIRO", label: "Dinheiro", color: "text-green-400 border-green-950 bg-green-950/20 active:bg-green-900/40" },
+    { value: "DEBITO", label: "Cartão Débito", color: "text-blue-400 border-blue-950 bg-blue-950/20 active:bg-blue-900/40" },
+    { value: "CREDITO", label: "Cartão Crédito", color: "text-purple-400 border-purple-950 bg-purple-950/20 active:bg-purple-900/40" },
+  ];
 
   return (
     <div className="space-y-8">
@@ -207,7 +285,7 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
             <Receipt className="h-4 w-4 text-yellow-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-black text-zinc-100">{openOrders.length}</span>
+            <span className="font-mono text-2xl font-black text-zinc-100">{openOrdersStats.length}</span>
             <span className="font-mono text-xs text-muted">ativas</span>
           </div>
         </div>
@@ -238,7 +316,7 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
       </div>
 
       {/* Ação Rápida: Abertura de Comanda e Controle de Abas */}
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
         
         {/* Abertura de Comanda */}
         <div className="flex-1 rounded-lg border border-border bg-card p-6 lg:max-w-md">
@@ -277,49 +355,79 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
           )}
         </div>
 
-        {/* Seleção de Abas */}
-        <div className="flex shrink-0 gap-1 rounded bg-zinc-950 p-1 border border-border">
-          <button
-            onClick={() => setActiveTab("open")}
-            className={`rounded px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all focus:outline-none ${
-              activeTab === "open"
-                ? "bg-card text-zinc-100 border border-border shadow-sm"
-                : "text-muted hover:text-foreground"
-            }`}
-          >
-            Abertas ({openOrders.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("closed")}
-            className={`rounded px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all focus:outline-none ${
-              activeTab === "closed"
-                ? "bg-card text-zinc-100 border border-border shadow-sm"
-                : "text-muted hover:text-foreground"
-            }`}
-          >
-            Histórico ({closedOrders.length})
-          </button>
+        {/* Barra de Busca + Abas */}
+        <div className="flex flex-col sm:flex-row gap-4 items-center shrink-0 w-full lg:w-auto">
+          {/* Input de Busca de Comanda */}
+          <div className="relative w-full sm:w-64">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+              <Search className="h-4 w-4 text-zinc-600" />
+            </span>
+            <input
+              type="text"
+              placeholder="Buscar comanda por nome..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded border border-border bg-zinc-950 py-2 pl-9 pr-3 text-xs text-foreground focus:border-zinc-500 focus:outline-none placeholder:text-zinc-700"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery("")}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-500 hover:text-zinc-200"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Seleção de Abas */}
+          <div className="flex gap-1 rounded bg-zinc-950 p-1 border border-border w-full sm:w-auto">
+            <button
+              onClick={() => setActiveTab("open")}
+              className={`flex-1 sm:flex-initial rounded px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all focus:outline-none ${
+                activeTab === "open"
+                  ? "bg-card text-zinc-100 border border-border shadow-sm"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              Abertas ({openOrdersFiltered.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("closed")}
+              className={`flex-1 sm:flex-initial rounded px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all focus:outline-none ${
+                activeTab === "closed"
+                  ? "bg-card text-zinc-100 border border-border shadow-sm"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              Histórico ({closedOrdersFiltered.length})
+            </button>
+          </div>
         </div>
       </div>
 
       {globalError && (
-        <div className="rounded border border-red-900 bg-red-950/30 p-4 text-xs font-semibold uppercase tracking-wider text-red-500">
-          {globalError}
+        <div className="rounded border border-red-900 bg-red-950/30 p-4 text-xs font-semibold uppercase tracking-wider text-red-500 flex items-center justify-between">
+          <span>{globalError}</span>
+          <button onClick={() => setGlobalError("")} className="text-red-400 hover:text-red-200">
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
       {/* Grade de Comandas */}
       <div>
         <h2 className="mb-4 text-xs font-bold uppercase tracking-wider text-zinc-500">
-          {activeTab === "open" ? "Comandas em Andamento" : "Comandas Fechadas / Faturadas"}
+          {activeTab === "open" ? "Comandas em Andamento" : "Comandas Fechadas / Faturadas hoje"}
         </h2>
 
         {currentOrdersList.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50">
             <p className="text-sm text-muted">
-              {activeTab === "open" 
-                ? "Nenhuma comanda aberta no momento." 
-                : "Nenhuma comanda fechada no histórico."}
+              {searchQuery 
+                ? "Nenhuma comanda corresponde à busca." 
+                : activeTab === "open"
+                  ? "Nenhuma comanda aberta no momento."
+                  : "Nenhuma comanda fechada no histórico hoje."}
             </p>
           </div>
         ) : (
@@ -343,7 +451,7 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
                   className={`flex flex-col rounded-lg border bg-card transition-all ${
                     order.status === "OPEN" 
                       ? "border-border hover:border-zinc-700" 
-                      : "border-border/40 opacity-75"
+                      : "border-border/40 opacity-80"
                   }`}
                 >
                   {/* Cabeçalho do Card */}
@@ -358,13 +466,20 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
                           <span>Abertura: {formattedTime}</span>
                         </div>
                       </div>
-                      <span className={`rounded border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-                        order.status === "OPEN"
-                          ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-500"
-                          : "bg-zinc-950 border-zinc-800 text-zinc-500"
-                      }`}>
-                        {order.status === "OPEN" ? "Aberta" : "Fechada"}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`rounded border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
+                          order.status === "OPEN"
+                            ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-500"
+                            : "bg-zinc-950 border-zinc-800 text-zinc-500"
+                        }`}>
+                          {order.status === "OPEN" ? "Aberta" : "Fechada"}
+                        </span>
+                        {order.status === "CLOSED" && order.paymentMethod && (
+                          <span className="rounded border border-zinc-800 bg-zinc-900/50 px-2 py-0.2 text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">
+                            {order.paymentMethod}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -378,18 +493,47 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
                         Nenhum consumo registrado.
                       </p>
                     ) : (
-                      <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      <ul className="space-y-2 max-h-48 overflow-y-auto pr-1">
                         {order.items.map((item) => (
                           <li 
                             key={item.id} 
-                            className="flex items-center justify-between text-xs border-b border-border/20 pb-1"
+                            className="flex items-center justify-between text-xs border-b border-border/10 pb-1.5"
                           >
                             <span className="text-zinc-300 font-sans truncate pr-2">
                               {item.quantity}x <span className="font-semibold text-zinc-200">{item.product?.name || "Produto Excluído"}</span>
                             </span>
-                            <span className="font-mono text-zinc-400 shrink-0">
-                              R$ {(item.quantity * item.unitPrice).toFixed(2)}
-                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono text-zinc-400">
+                                R$ {(item.quantity * item.unitPrice).toFixed(2)}
+                              </span>
+                              
+                              {/* Controles de quantidade e exclusão direta no card para comandas abertas */}
+                              {order.status === "OPEN" && (
+                                <div className="flex items-center gap-0.5 ml-1 bg-zinc-950 border border-border/50 rounded p-0.5 shadow-sm">
+                                  <button
+                                    onClick={() => handleUpdateItemQuantity(item.id, item.quantity - 1)}
+                                    className="text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded w-4.5 h-4.5 flex items-center justify-center font-bold text-xs"
+                                    title="Diminuir"
+                                  >
+                                    -
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateItemQuantity(item.id, item.quantity + 1)}
+                                    className="text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded w-4.5 h-4.5 flex items-center justify-center font-bold text-xs"
+                                    title="Aumentar"
+                                  >
+                                    +
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteItem(item.id)}
+                                    className="text-zinc-600 hover:text-red-500 hover:bg-zinc-800 rounded w-4.5 h-4.5 flex items-center justify-center ml-0.5"
+                                    title="Excluir item"
+                                  >
+                                    <Trash2 className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </li>
                         ))}
                       </ul>
@@ -413,7 +557,7 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
                           <button
                             onClick={() => openConsumptionModal(order.id)}
                             disabled={products.length === 0}
-                            className="flex-1 flex items-center justify-center gap-1 rounded border border-border hover:border-zinc-500 bg-zinc-950 py-2 text-xs font-bold uppercase tracking-wider text-zinc-200 hover:text-foreground transition-all focus:outline-none"
+                            className="flex-1 flex items-center justify-center gap-1 rounded border border-border hover:border-zinc-500 bg-zinc-950 py-2 text-xs font-bold uppercase tracking-wider text-zinc-200 hover:text-foreground transition-all focus:outline-none disabled:opacity-50"
                             title={products.length === 0 ? "Cadastre produtos primeiro" : "Adicionar Consumo"}
                           >
                             <UtensilsCrossed className="h-3.5 w-3.5 text-zinc-400" />
@@ -421,15 +565,10 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
                           </button>
                           
                           <button
-                            onClick={() => handleCloseOrder(order.id)}
-                            disabled={closeLoadingId !== null}
-                            className="flex-1 flex items-center justify-center gap-1 rounded bg-zinc-100 hover:bg-zinc-200 py-2 text-xs font-black uppercase tracking-wider text-zinc-950 transition-all focus:outline-none disabled:opacity-50"
+                            onClick={() => openCheckoutModal(order.id)}
+                            className="flex-1 flex items-center justify-center gap-1 rounded bg-zinc-100 hover:bg-zinc-200 py-2 text-xs font-black uppercase tracking-wider text-zinc-950 transition-all focus:outline-none"
                           >
-                            {closeLoadingId === order.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <CheckCircle className="h-3.5 w-3.5" />
-                            )}
+                            <CheckCircle className="h-3.5 w-3.5" />
                             <span>Cobrar</span>
                           </button>
                         </>
@@ -456,7 +595,7 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
         )}
       </div>
 
-      {/* Modal/Drawer de Consumo */}
+      {/* Modal de Consumo (Lançamento de item) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl animate-in fade-in zoom-in duration-150">
@@ -552,6 +691,95 @@ export function DashboardClient({ initialProducts, initialOrders }: DashboardCli
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Checkout (Cobrança) */}
+      {isCheckoutModalOpen && selectedCheckoutOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-100 flex items-center gap-1.5">
+                <Receipt className="h-4 w-4" />
+                <span>Fechar Comanda - {selectedCheckoutOrder.clientName}</span>
+              </h3>
+              <button 
+                onClick={() => setIsCheckoutModalOpen(false)}
+                className="rounded text-muted hover:text-foreground hover:bg-zinc-900 p-1 focus:outline-none transition-all"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCheckout} className="space-y-6">
+              {/* Resumo da conta */}
+              <div className="rounded bg-zinc-950 border border-border p-4 space-y-2">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Resumo do Consumo</h4>
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                  {selectedCheckoutOrder.items.map((item) => (
+                    <div key={item.id} className="flex justify-between text-xs">
+                      <span className="text-zinc-400">{item.quantity}x {item.product?.name}</span>
+                      <span className="font-mono text-zinc-300">R$ {(item.quantity * item.unitPrice).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  {selectedCheckoutOrder.items.length === 0 && (
+                    <div className="text-xs italic text-zinc-600 py-1">Nenhum consumo lançado.</div>
+                  )}
+                </div>
+                <div className="border-t border-border/40 pt-2 flex justify-between items-baseline">
+                  <span className="text-xs font-bold text-zinc-400 uppercase">Total a Pagar</span>
+                  <span className="font-mono text-lg font-black text-zinc-100">R$ {selectedCheckoutTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Seleção do método de pagamento */}
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-muted">
+                  Método de Pagamento
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {paymentMethodsList.map((m) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      onClick={() => setPaymentMethod(m.value)}
+                      className={`flex items-center justify-center p-3.5 rounded border text-xs font-black uppercase tracking-wider transition-all select-none ${
+                        paymentMethod === m.value
+                          ? `${m.color} border-zinc-200 ring-1 ring-zinc-200 font-extrabold text-zinc-100`
+                          : "border-border bg-zinc-950/60 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex gap-2 border-t border-border/60 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsCheckoutModalOpen(false)}
+                  className="flex-1 rounded border border-border bg-zinc-950 hover:bg-zinc-900 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-foreground transition-all"
+                  disabled={checkoutLoading}
+                >
+                  Voltar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded bg-green-500 hover:bg-green-600 text-zinc-950 py-2.5 text-xs font-bold uppercase tracking-wider transition-all active:scale-[0.98]"
+                  disabled={checkoutLoading}
+                >
+                  {checkoutLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-3.5 w-3.5" />
+                  )}
+                  <span>Finalizar</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
